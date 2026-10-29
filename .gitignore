@@ -1,0 +1,17 @@
+/build/
+/package/
+/artifacts/
+*.log
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+*.exe
+*.dll
+*.zip
+*.user
+*.suo
+.vs/
+xy-speed.ini
+!packaging/xy-speed.ini
