@@ -28,7 +28,30 @@ std::atomic<WNDPROC> previousWndProc{};
 constexpr UINT editMessage=WM_APP+0x583;
 std::atomic_uint activeCallbacks{};
 std::mutex sampleMutex, renderMutex, logMutex;
-struct Sample { float xy{}; ULONGLONG time{}; bool valid{}; } sample;
+struct Sample {
+    float xy{}; ULONGLONG time{}; bool valid{}; int tick=-1;
+    float previousTickXY{}; bool hasPreviousTick{};
+} sample;
+Sample TrackPhysicsSample(Sample next,const Sample& previous) {
+    next.hasPreviousTick=false;
+    const bool continuous=next.valid && previous.valid && next.tick>=0 && previous.tick>=0 &&
+        next.time>=previous.time && next.time-previous.time<=500;
+    if (continuous && next.tick==previous.tick) {
+        // The engine may call CreateMove repeatedly without advancing physics.
+        // Keep the previous *physics tick* as baseline, not the previous frame.
+        next.previousTickXY=previous.previousTickXY;
+        next.hasPreviousTick=previous.hasPreviousTick;
+    } else if (continuous && next.tick>previous.tick) {
+        next.previousTickXY=previous.xy;
+        next.hasPreviousTick=true;
+    }
+    return next;
+}
+ImU32 SpeedColor(const Sample& current,ULONGLONG now) {
+    const bool fresh=current.valid && now>=current.time && now-current.time<=500;
+    const bool losing=fresh && current.hasPreviousTick && current.previousTickXY-current.xy>=1.f;
+    return losing?IM_COL32(255,80,80,255):IM_COL32(255,255,255,255);
+}
 struct Settings { float x=.5f, y=.72f, size=32.f; int decimals=2; } settings;
 MoveFn originalMove{};
 EndSceneFn originalEndScene{};
@@ -128,9 +151,12 @@ LRESULT CALLBACK WindowProc(HWND window,UINT message,WPARAM wparam,LPARAM lparam
                 if (message==WM_INPUT) return DefWindowProcW(window,message,wparam,lparam);
             }
         }
-        // These keys are handled by the worker, and must not also trigger a
-        // user game binding (especially while entering/exiting the editor).
-        if (keyboard && (wparam==VK_F8 || wparam==VK_F9 || wparam==VK_F11)) return 0;
+        // Only key events contain virtual key codes. WM_CHAR and related text
+        // messages contain character codes: lowercase w/x/z overlap F8/F9/F11.
+        // The worker owns the actual hotkeys, but must never consume that text.
+        const bool keyEvent=message==WM_KEYDOWN || message==WM_KEYUP ||
+            message==WM_SYSKEYDOWN || message==WM_SYSKEYUP;
+        if (keyEvent && (wparam==VK_F8 || wparam==VK_F9 || wparam==VK_F11)) return 0;
     }
     return forward?CallWindowProcW(forward,window,message,wparam,lparam):DefWindowProcW(window,message,wparam,lparam);
 }
@@ -157,12 +183,13 @@ bool __fastcall OnMove(void* mode, float seconds, cssxy::UserCmd* command) {
         Sample next;
         next.time=GetTickCount64();
         next.valid=cssxy::engine.ReadPlayer(state, health);
+        next.tick=state.tickBase;
         if (next.valid) {
             next.xy=std::hypot(state.velocity.x, state.velocity.y);
             next.valid=std::isfinite(next.xy);
         }
         std::lock_guard lock(sampleMutex);
-        sample=next;
+        sample=TrackPhysicsSample(next,sample);
     }
     return result;
 }
@@ -274,7 +301,7 @@ void Draw(IDirect3DDevice9* device) {
         draw->AddTriangleFilled(mouse,{mouse.x+3,mouse.y+17},{mouse.x+13,mouse.y+12},IM_COL32(255,255,255,255));
     }
     draw->AddText(font, settings.size, {position.x+2, position.y+2}, IM_COL32(0,0,0,230), text);
-    draw->AddText(font, settings.size, position, IM_COL32(255,255,255,255), text);
+    draw->AddText(font, settings.size, position, SpeedColor(current,now), text);
     ImGui::Render();
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
@@ -421,7 +448,7 @@ DWORD WINAPI Worker(void*) {
     wchar_t path[32768]{};
     GetModuleFileNameW(selfModule,path,32768);
     directory=std::filesystem::path(path).parent_path();
-    Log("CSS XY Speed 0.1.1 starting; client velocity, XY=hypot(vx,vy), no VZ");
+    Log("CSS XY Speed 0.1.6 starting; client velocity, XY=hypot(vx,vy), no VZ");
     bool ready=false;
     std::string error;
     if (!cssxy::engine.Initialize(error)) { /* Bridge reports the exact unsupported-build/interface reason. */ }

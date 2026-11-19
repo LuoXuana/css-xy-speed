@@ -7,7 +7,7 @@
 
 namespace cssxy {
 struct Vec3 { float x{},y{},z{}; };
-struct PlayerState { Vec3 velocity; };
+struct PlayerState { Vec3 velocity; int tickBase=-1; };
 // CS:S x64 build 11003710 input ABI. The HUD never writes these fields.
 struct UserCmd {
     void* vptr; int commandNumber,tickCount; Vec3 angles;

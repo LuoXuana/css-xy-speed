@@ -117,7 +117,7 @@ bool Engine::Initialize(std::string& error) {
         if (std::strcmp(name,"CCSPlayer")==0) { std::set<RecvTable*> stack; Walk(row.table,0,offsets_,stack); break; }
         cls=row.next;
     }
-    for (const char* property:{"m_vecVelocity[0]","m_iHealth","m_lifeState"}) if (!offsets_.contains(property)) {
+    for (const char* property:{"m_vecVelocity[0]","m_iHealth","m_lifeState","m_nTickBase"}) if (!offsets_.contains(property)) {
         error=std::string("Required player field missing: ")+property; return false;
     }
     initialized_=true; error.clear(); return true;
@@ -132,9 +132,10 @@ bool Engine::ReadPlayer(PlayerState& state,int& health) {
     auto player=static_cast<std::byte*>(getEntity(entities_,localIndex(engine_)));
     if (!player) return false;
     state.velocity=Read<Vec3>(player+offsets_.at("m_vecVelocity[0]"),{NAN,NAN,NAN});
+    state.tickBase=Read<int>(player+offsets_.at("m_nTickBase"),-1);
     health=Read<int>(player+offsets_.at("m_iHealth"));
     const auto life=Read<std::uint8_t>(player+offsets_.at("m_lifeState"),255);
-    return life==0 && health>0 && health<100000 && std::isfinite(state.velocity.x) &&
+    return life==0 && health>0 && health<100000 && state.tickBase>=0 && std::isfinite(state.velocity.x) &&
         std::isfinite(state.velocity.y) && std::isfinite(state.velocity.z);
 }
 bool Engine::ClientCommand(const char* command) const {

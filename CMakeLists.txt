@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(CSSXYSpeed VERSION 0.1.1 LANGUAGES C CXX)
+project(CSSXYSpeed VERSION 0.1.6 LANGUAGES C CXX)
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "CSS XY Speed requires Windows x64")
 endif()
